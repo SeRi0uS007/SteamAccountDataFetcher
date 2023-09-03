@@ -3,7 +3,23 @@ using SteamKit2;
 
 namespace SteamAccountDataFetcher.SteamDataClient;
 
-internal class SteamDataClient
+public class ResponseData
+{
+    public class AppData
+    {
+        public uint AppId { get; set; } = 0;
+        public long RegistrationTime { get; set; } = 0;
+        public string AppName { get; set; } = string.Empty;
+    }
+    public string Username { get; set; } = string.Empty;
+    public ulong SteamId { get; set; } = 0;
+    public List<AppData> Apps { get; set; } = new();
+    public bool IsLimited { get; set; }
+    public bool IsBanned { get; set; }
+    public string ApiKey { get; set; } = string.Empty;
+}
+
+internal class Client
 {
     private SteamClient _steamClient;
     private SteamTwoFactorGenerator _steamTwoFactorGenerator;
@@ -14,6 +30,7 @@ internal class SteamDataClient
 
     private bool _isRunning = false;
     private bool _isLicensesProcessed = false;
+    private bool _isWebAPIProcessed = false;
 
     internal SteamConfiguration SteamConfiguration 
     {
@@ -29,29 +46,10 @@ internal class SteamDataClient
 
     private static uint _instance = 0;
     private static DateTime _lastConnectionTime = DateTime.MinValue;
-
-    public class ResponseData
-    {
-        public class AppData
-        {
-            public uint AppId { get; set; } = 0;
-            public long RegistrationTime { get; set; } = 0;
-            public string AppName { get; set; } = string.Empty;
-        }
-        public bool Success
-        {
-            get => SteamId != 0 && !string.IsNullOrEmpty(ApiKey);
-        }
-        public string Username { get; set; } = string.Empty;
-        public ulong SteamId { get; set; } = 0;
-        public List<AppData> Apps { get; set; } = new();
-        public bool IsLimited { get; set; }
-        public bool IsBanned { get; set; }
-        public string ApiKey { get; set; } = string.Empty;
-    }
+    
     private ResponseData _responseData;
 
-    internal SteamDataClient(string username, string password, string sharedSecret)
+    internal Client(string username, string password, string sharedSecret)
     {
         ++_instance;
 
@@ -86,8 +84,8 @@ internal class SteamDataClient
         }
         _steamApps = steamApps;
 
-        _callbackManager.Subscribe<SteamClient.ConnectedCallback>(OnConnectedAsync);
-        _callbackManager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnectedAsync);
+        _callbackManager.Subscribe<SteamKit2.SteamClient.ConnectedCallback>(OnConnectedAsync);
+        _callbackManager.Subscribe<SteamKit2.SteamClient.DisconnectedCallback>(OnDisconnectedAsync);
         _callbackManager.Subscribe<SteamUser.LoggedOnCallback>(OnLoggedOnAsync);
         _callbackManager.Subscribe<SteamUser.LoggedOffCallback>(OnLoggedOffAsync);
         _callbackManager.Subscribe<SteamApps.LicenseListCallback>(OnLicenseListAsync);
@@ -121,7 +119,7 @@ internal class SteamDataClient
         {
             _callbackManager.RunCallbacks();
 
-            if (_responseData.Success && _isLicensesProcessed)
+            if (_isLicensesProcessed && _isWebAPIProcessed)
                 _steamClient.Disconnect();
             await Task.Delay(TimeSpan.FromSeconds(1));
         }
@@ -138,7 +136,7 @@ internal class SteamDataClient
         });
     }
 
-    private async void OnConnectedAsync(SteamClient.ConnectedCallback callback)
+    private async void OnConnectedAsync(SteamKit2.SteamClient.ConnectedCallback callback)
     {
         _lastConnectionTime = DateTime.Now;
 
@@ -161,20 +159,11 @@ internal class SteamDataClient
         await LoginAsync();
     }
 
-    private async void OnDisconnectedAsync(SteamClient.DisconnectedCallback callback)
+    private async void OnDisconnectedAsync(SteamKit2.SteamClient.DisconnectedCallback callback)
     {
         if (callback.UserInitiated)
         {
             Log("Disconnected from Steam Network by user.");
-
-            if (!_responseData.Success || !_isLicensesProcessed)
-            {
-                _responseData.SteamId = 0;
-                _responseData.Apps.Clear();
-                _responseData.IsLimited = false;
-                _responseData.IsBanned = false;
-                _responseData.ApiKey = string.Empty;
-            }
 
             _isRunning = false;
             return;
@@ -223,7 +212,34 @@ internal class SteamDataClient
             _steamClient.Disconnect();
             return;
         }
-        Log("Logged into Web Api. Retrieving Web API Key.");
+        Log("Logged into Web Api.");
+    }
+
+    private async void OnIsLimitedAccount(DataFetcher.IsLimitedAccountCallback callback)
+    {
+        if (callback.Locked)
+        {
+            Log("Account is locked.", Logger.Level.Error);
+            _steamClient.Disconnect();
+            return;
+        }
+
+        _responseData.IsBanned = callback.CommunityBanned;
+        _responseData.IsLimited = callback.Limited;
+
+        if (callback.CommunityBanned)
+            Log("Account is banned.", Logger.Level.Warning);
+
+        if (callback.Limited)
+        {
+            Log("Account is limited.", Logger.Level.Warning);
+            
+            // Limited accounts is unable to retrieve Web API
+            _isWebAPIProcessed = true;
+            return;
+        }
+
+        Log("Retrieving Web API Key.");
         await Task.Delay(Configuration.DefaultWebRequestTimeout);
 
         (bool success, string webApiKey) = await _steamWebClient.GetWebApiKeyAsync();
@@ -236,22 +252,7 @@ internal class SteamDataClient
         Log("Retrieved Web API Key.");
 
         _responseData.ApiKey = webApiKey;
-    }
-
-    private void OnIsLimitedAccount(DataFetcher.IsLimitedAccountCallback callback)
-    {
-        if (callback.Locked)
-        {
-            Log("Account is locked.", Logger.Level.Error);
-            _steamClient.Disconnect();
-            return;
-        }
-
-        if (callback.CommunityBanned)
-            Log("Account is banned.", Logger.Level.Warning);
-
-        _responseData.IsBanned = callback.CommunityBanned;
-        _responseData.IsLimited = callback.Limited;
+        _isWebAPIProcessed = true;
     }
 
     private async void OnLoggedOffAsync(SteamUser.LoggedOffCallback callback)
@@ -287,14 +288,30 @@ internal class SteamDataClient
                 if (package.PackageID == 0)
                     continue;
 
-                Log($"Retrieving PICS info for package {package.PackageID}");
+                var packageUnixTime = (new DateTimeOffset(package.TimeCreated)).ToUnixTimeMilliseconds();
+
+                Log($"Retrieving PICS info for package {package.PackageID}.");
 
                 List<SteamApps.PICSRequest> packages = new()
                 {
                     new(package.PackageID, package.AccessToken)
                 };
 
-                var productInfo = await _steamApps.PICSGetProductInfo(new List<SteamApps.PICSRequest>(0), packages);
+                AsyncJobMultiple<SteamApps.PICSProductInfoCallback>.ResultSet productInfo;
+                while (true)
+                {
+                    try
+                    {
+                        productInfo = await _steamApps.PICSGetProductInfo(new List<SteamApps.PICSRequest>(0), packages);
+                        break;
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        Log($"Failure to receive PICS info for package {package.PackageID}. Retrying...", Logger.Level.Warning);
+                        await Task.Delay(1000);
+                        continue;
+                    }
+                }
                 if (productInfo == null || !productInfo.Complete || productInfo.Failed || productInfo.Results == null)
                 {
                     Log($"Unable to receive PICS info", Logger.Level.Error);
@@ -306,26 +323,37 @@ internal class SteamDataClient
                 {
                     foreach (var packageResponse in product.Packages.Values)
                     {
-                        List<uint> apps = GetAppsInKeyValues(packageResponse.KeyValues);
-                        if (apps.Count == 0)
+                        uint[] apps = GetAppsInKeyValues(packageResponse.KeyValues);
+                        List<uint> newApps = new();
+
+                        foreach (var app in apps)
+                        {
+                            var appData = _responseData.Apps.SingleOrDefault(x => x?.AppId == app, null);
+                            if (appData == null)
+                                newApps.Add(app);
+                            else
+                                if (appData.RegistrationTime > packageUnixTime)
+                                    appData.RegistrationTime = packageUnixTime;
+                        }
+
+                        if (newApps.Count == 0)
                             continue;
 
-                        (var success, var appNames) = await _steamWebClient.GetAppNamesAsync(apps.ToArray());
+                        (var success, var appNames) = await _steamWebClient.GetAppNamesAsync(newApps.ToArray());
 
                         if (!success || appNames == null)
                         {
-                            Log($"Unable to receive Apps info", Logger.Level.Error);
+                            Log($"Unable to receive Apps info.", Logger.Level.Error);
                             _steamClient.Disconnect();
                             return;
                         }
 
                         foreach (var app in appNames)
                         {
-                            var offset = new DateTimeOffset(package.TimeCreated);
                             _responseData.Apps.Add(new()
                             {
                                 AppId = app.Key,
-                                RegistrationTime = offset.ToUnixTimeMilliseconds(),
+                                RegistrationTime = packageUnixTime,
                                 AppName = app.Value
                             });
                         }
@@ -346,20 +374,17 @@ internal class SteamDataClient
         _isLicensesProcessed = true;
     }
 
-    private List<uint> GetAppsInKeyValues(KeyValue keyValue)
+    private uint[] GetAppsInKeyValues(KeyValue keyValue)
     {
         List<uint> apps = new();
 
         foreach (KeyValue appKeyValue in keyValue["appids"].Children)
         {
             var app = appKeyValue.AsUnsignedInteger();
-            if (_responseData.Apps.Any(x => x.AppId == app))
-                continue;
-
             apps.Add(app);
         }
 
-        return apps;
+        return apps.ToArray();
     }
 
     internal void Log(string message, Logger.Level level = Logger.Level.Info, [CallerMemberName] string callerName = "") =>

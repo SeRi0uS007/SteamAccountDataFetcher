@@ -1,13 +1,14 @@
 ﻿using System.Collections;
 using System.Text.Json;
+using SteamAccountDataFetcher.SteamDataClient;
 
 namespace SteamAccountDataFetcher.FSAgent;
 
-internal class WriteJSONAgent : IList<SteamDataClient.SteamDataClient.ResponseData>
+internal class WriteJSONAgent : IList<ResponseData>
 {
     private string FilePath { get; init; }
 
-    private List<SteamDataClient.SteamDataClient.ResponseData> _accountDataList;
+    private List<ResponseData> _accountDataList;
     private static readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         WriteIndented = true
@@ -34,7 +35,7 @@ internal class WriteJSONAgent : IList<SteamDataClient.SteamDataClient.ResponseDa
         {
             using (FileStream file = new FileStream(path, FileMode.Open, FileAccess.Read))
             {
-                var cachedType = JsonSerializer.Deserialize<List<SteamDataClient.SteamDataClient.ResponseData>?>(file);
+                var cachedType = JsonSerializer.Deserialize<List<ResponseData>?>(file);
                 if (cachedType == null)
                 {
                     _accountDataList = new();
@@ -57,7 +58,7 @@ internal class WriteJSONAgent : IList<SteamDataClient.SteamDataClient.ResponseDa
             JsonSerializer.Serialize(file, _accountDataList, _jsonSerializerOptions);
     }
 
-    public SteamDataClient.SteamDataClient.ResponseData this[int index]
+    public ResponseData this[int index]
     { 
         get => _accountDataList[index];
         set => _accountDataList[index] = value; 
@@ -66,11 +67,11 @@ internal class WriteJSONAgent : IList<SteamDataClient.SteamDataClient.ResponseDa
     public int Count => _accountDataList.Count;
 
     public bool IsReadOnly => 
-        ((IList<SteamDataClient.SteamDataClient.ResponseData>)_accountDataList).IsReadOnly;
+        ((IList<ResponseData>)_accountDataList).IsReadOnly;
 
-    public int IndexOf(SteamDataClient.SteamDataClient.ResponseData item) => _accountDataList.IndexOf(item);
+    public int IndexOf(ResponseData item) => _accountDataList.IndexOf(item);
 
-    public void Insert(int index, SteamDataClient.SteamDataClient.ResponseData item)
+    public void Insert(int index, ResponseData item)
     {
         _accountDataList.Insert(index, item);
         WriteCache();
@@ -82,7 +83,7 @@ internal class WriteJSONAgent : IList<SteamDataClient.SteamDataClient.ResponseDa
         WriteCache();
     }
 
-    public void Add(SteamDataClient.SteamDataClient.ResponseData item)
+    public void Add(ResponseData item)
     {
         _accountDataList.Add(item);
         WriteCache();
@@ -94,11 +95,11 @@ internal class WriteJSONAgent : IList<SteamDataClient.SteamDataClient.ResponseDa
         WriteCache();
     }
 
-    public bool Contains(SteamDataClient.SteamDataClient.ResponseData item) => _accountDataList.Contains(item);
+    public bool Contains(ResponseData item) => _accountDataList.Contains(item);
 
-    public void CopyTo(SteamDataClient.SteamDataClient.ResponseData[] array, int arrayIndex) => _accountDataList.CopyTo(array, arrayIndex);
+    public void CopyTo(ResponseData[] array, int arrayIndex) => _accountDataList.CopyTo(array, arrayIndex);
 
-    public bool Remove(SteamDataClient.SteamDataClient.ResponseData item)
+    public bool Remove(ResponseData item)
     {
         var success = _accountDataList.Remove(item);
         if (success)
@@ -107,7 +108,7 @@ internal class WriteJSONAgent : IList<SteamDataClient.SteamDataClient.ResponseDa
         return success;
     }
 
-    public IEnumerator<SteamDataClient.SteamDataClient.ResponseData> GetEnumerator() => _accountDataList.GetEnumerator();
+    public IEnumerator<ResponseData> GetEnumerator() => _accountDataList.GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

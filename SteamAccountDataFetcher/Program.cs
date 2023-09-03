@@ -22,8 +22,8 @@ public class Program
         {
             AccountLoginInfo account = csvAccounts.First();
 
-            SteamDataClient.SteamDataClient steamDataClient = new(account.Username, account.Password, account.SharedSecret);
-            SteamDataClient.SteamDataClient.ResponseData data = await steamDataClient.GetResponseDataAsync();
+            Client steamDataClient = new(account.Username, account.Password, account.SharedSecret);
+            ResponseData data = await steamDataClient.GetResponseDataAsync();
 
             jsonAccounts.Add(data);
             csvAccounts.Remove(account);

@@ -15,11 +15,11 @@ internal class SteamTwoFactorGenerator
     private static int _timeDiffirence = 0;
     private static bool _aligned = false;
 
-    private SteamDataClient _steamDataClient;
+    private Client _steamClient;
 
-    internal SteamTwoFactorGenerator(SteamDataClient steamDataClient)
+    internal SteamTwoFactorGenerator(Client steamClient)
     {
-        _steamDataClient = steamDataClient;
+        _steamClient = steamClient;
     }
 
     internal async Task<string> GenerateSteamGuardCodeAsync(string sharedSecret)
@@ -67,12 +67,12 @@ internal class SteamTwoFactorGenerator
     {
         long currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         KeyValue response;
-        using (var steamTwoFactorServiceInterface = _steamDataClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_TWO_FACTOR_SERVICE_INTERFACE))
+        using (var steamTwoFactorServiceInterface = _steamClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_TWO_FACTOR_SERVICE_INTERFACE))
         {
             response = await steamTwoFactorServiceInterface.CallAsync(HttpMethod.Post, STEAM_QUERY_TIME_METHOD);
             if (response == null)
             {
-                _steamDataClient.Log("Unable to align time.", Logger.Level.Error);
+                _steamClient.Log("Unable to align time.", Logger.Level.Error);
                 return;
             }
         }
@@ -80,7 +80,7 @@ internal class SteamTwoFactorGenerator
         var serverTime = response["server_time"].AsLong();
         if (serverTime == 0)
         {
-            _steamDataClient.Log($"{nameof(serverTime)} is invalid.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(serverTime)} is invalid.", Logger.Level.Error);
             return;
         }
 

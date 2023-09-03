@@ -1,7 +1,7 @@
-﻿using SteamKit2;
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using SteamKit2;
 
 namespace SteamAccountDataFetcher.SteamDataClient;
 
@@ -19,23 +19,23 @@ internal class SteamWebClient: IDisposable
     private static readonly Regex API_KEY_EXPRESSION = new($@"<p>.*:*.(?'{API_GROUP_KEY}'[0-9A-F]{{32}})</p>", RegexOptions.Compiled);
 
     private HttpClient? _httpClient;
-    private SteamDataClient _steamDataClient;
+    private Client _steamClient;
     private string _webAPIKey = string.Empty;
     private SemaphoreSlim _webAPISemaphore = new(1);
     internal string SessionID { get; private set; } = string.Empty;
 
     private static DateTime _lastRequestTime = DateTime.MinValue;
 
-    internal SteamWebClient(SteamDataClient steamDataClient)
+    internal SteamWebClient(Client steamClient)
     {
-        _steamDataClient = steamDataClient;
+        _steamClient = steamClient;
     }
 
     internal async Task<(bool, string)> GetWebApiKeyAsync()
     {
         if (_httpClient == null)
         {
-            _steamDataClient.Log($"{nameof(_httpClient)} is not initialized.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(_httpClient)} is not initialized.", Logger.Level.Error);
             return (false, string.Empty);
         }
 
@@ -57,7 +57,7 @@ internal class SteamWebClient: IDisposable
         }
         catch (HttpRequestException e)
         {
-            _steamDataClient.Log($"Unable to load API page with status code {e.StatusCode}.", Logger.Level.Error);
+            _steamClient.Log($"Unable to load API page with status code {e.StatusCode}.", Logger.Level.Error);
             _webAPISemaphore.Release();
             return (false, string.Empty);
         }
@@ -66,7 +66,7 @@ internal class SteamWebClient: IDisposable
             var cleanHtml = CleanHtml(responseStream);
             if (string.IsNullOrEmpty(cleanHtml))
             {
-                _steamDataClient.Log($"{nameof(responseStream)} is empty.", Logger.Level.Error);
+                _steamClient.Log($"{nameof(responseStream)} is empty.", Logger.Level.Error);
                 _webAPISemaphore.Release();
                 return (false, string.Empty);
             }
@@ -74,7 +74,7 @@ internal class SteamWebClient: IDisposable
             var webApiKey = MatchApiKey(cleanHtml);
             if (string.IsNullOrEmpty(webApiKey))
             {
-                _steamDataClient.Log("API key is missing. Generating.");
+                _steamClient.Log("API key is missing. Generating.");
                 await Task.Delay(Configuration.DefaultWebRequestTimeout);
                 (bool success, webApiKey) = await RegisterWebApiKeyAsync();
                 
@@ -98,7 +98,7 @@ internal class SteamWebClient: IDisposable
         if (apps.Length == 0)
         {
             var msg = $"{nameof(apps)} is invalid.";
-            _steamDataClient.Log(msg, Logger.Level.Error);
+            _steamClient.Log(msg, Logger.Level.Error);
             throw new ArgumentOutOfRangeException(msg);
         }
 
@@ -109,12 +109,12 @@ internal class SteamWebClient: IDisposable
             postData.Add($"appids[{i}]", apps[i]);
 
         KeyValue response;
-        using (var steamUserAuthInterface = _steamDataClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_COMMUNITY_SERVICE_INTERFACE))
+        using (var steamUserAuthInterface = _steamClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_COMMUNITY_SERVICE_INTERFACE))
         {
             response = await steamUserAuthInterface.CallAsync(HttpMethod.Get, STEAM_GET_APPS_METHOD, args: postData);
             if (response == null || response.Children.Count == 0)
             {
-                _steamDataClient.Log("Unable to get information about Steam Apps.", Logger.Level.Error);
+                _steamClient.Log("Unable to get information about Steam Apps.", Logger.Level.Error);
                 return (false, null);
             }
         }
@@ -138,13 +138,13 @@ internal class SteamWebClient: IDisposable
 
         if (_httpClient == null)
         {
-            _steamDataClient.Log($"{nameof(_httpClient)} is not initialized.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(_httpClient)} is not initialized.", Logger.Level.Error);
             return (false, result);
         }
 
         if (string.IsNullOrEmpty(SessionID))
         {
-            _steamDataClient.Log($"{nameof(SessionID)} is null.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(SessionID)} is null.", Logger.Level.Error);
             return (false, result);
         }
 
@@ -164,7 +164,7 @@ internal class SteamWebClient: IDisposable
         }
         catch (HttpRequestException e)
         {
-            _steamDataClient.Log($"Unable to load API page with status code {e.StatusCode}.", Logger.Level.Error);
+            _steamClient.Log($"Unable to load API page with status code {e.StatusCode}.", Logger.Level.Error);
             return (false, result);
         }
 
@@ -173,14 +173,14 @@ internal class SteamWebClient: IDisposable
             var cleanHtml = CleanHtml(responseStream);
             if (string.IsNullOrEmpty(cleanHtml))
             {
-                _steamDataClient.Log($"{nameof(responseStream)} is empty.", Logger.Level.Error);
+                _steamClient.Log($"{nameof(responseStream)} is empty.", Logger.Level.Error);
                 return (false, result);
             }    
 
             result = MatchApiKey(cleanHtml);
             if (string.IsNullOrEmpty(result))
             {
-                _steamDataClient.Log("Unable to generate API key.", Logger.Level.Error);
+                _steamClient.Log("Unable to generate API key.", Logger.Level.Error);
                 return (false, result);
             }
 
@@ -220,15 +220,15 @@ internal class SteamWebClient: IDisposable
 
     internal async Task<bool> InitAsync(string webApiUserNonce)
     {
-        if (_steamDataClient.SteamID == null || !_steamDataClient.SteamID.IsValid ||  !_steamDataClient.SteamID.IsIndividualAccount)
+        if (_steamClient.SteamID == null || !_steamClient.SteamID.IsValid ||  !_steamClient.SteamID.IsIndividualAccount)
         {
-            _steamDataClient.Log($"{nameof(_steamDataClient.SteamID)} is invalid.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(_steamClient.SteamID)} is invalid.", Logger.Level.Error);
             return false;
         }
 
         if (string.IsNullOrEmpty(webApiUserNonce))
         {
-            _steamDataClient.Log($"{nameof(webApiUserNonce)} is empty.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(webApiUserNonce)} is empty.", Logger.Level.Error);
             return false;
         }
 
@@ -237,7 +237,7 @@ internal class SteamWebClient: IDisposable
         var publicKey = KeyDictionary.GetPublicKey(EUniverse.Public);
         if (publicKey == null || publicKey.Length == 0)
         {
-            _steamDataClient.Log($"{nameof(KeyDictionary)} is empty.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(KeyDictionary)} is empty.", Logger.Level.Error);
             return false;
         }
 
@@ -254,16 +254,16 @@ internal class SteamWebClient: IDisposable
         {
             { "encrypted_loginkey", encryptedLoginKey },
             { "sessionkey", encryptedSessionKey },
-            { "steamid", _steamDataClient.SteamID.ConvertToUInt64() }
+            { "steamid", _steamClient.SteamID.ConvertToUInt64() }
         };
 
         KeyValue response;
-        using (var steamUserAuthInterface = _steamDataClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_USER_AUTH_INTERFACE))
+        using (var steamUserAuthInterface = _steamClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_USER_AUTH_INTERFACE))
         {
             response = await steamUserAuthInterface.CallAsync(HttpMethod.Post, STEAM_AUTH_USER_METHOD, args: postData);
             if (response == null)
             {
-                _steamDataClient.Log("Unable to authenticate user to web.", Logger.Level.Error);
+                _steamClient.Log("Unable to authenticate user to web.", Logger.Level.Error);
                 return false;
             }
         }
@@ -271,14 +271,14 @@ internal class SteamWebClient: IDisposable
         string? steamLogin = response["token"].AsString();
         if (string.IsNullOrWhiteSpace(steamLogin))
         {
-            _steamDataClient.Log($"{nameof(steamLogin)} is empty.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(steamLogin)} is empty.", Logger.Level.Error);
             return false;
         }
 
         string? steamLoginSecure = response["tokensecure"].AsString();
         if (string.IsNullOrWhiteSpace(steamLoginSecure))
         {
-            _steamDataClient.Log($"{nameof(steamLoginSecure)} is empty.", Logger.Level.Error);
+            _steamClient.Log($"{nameof(steamLoginSecure)} is empty.", Logger.Level.Error);
             return false;
         }
 
