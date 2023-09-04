@@ -37,3 +37,11 @@ login1;password1;sharedSecret1
 login2;password2;sharedSecret2
 login3;password3;sharedSecret3
 ```
+
+## TODO
+
+Someday in the future. After I have used it, I write down a list of things to do.
+
+- Add proxy support to speed up data collection;
+- Finalize the configuration code;
+- Сross-platform releases.
