@@ -93,45 +93,6 @@ internal class SteamWebClient: IDisposable
         }
     }
 
-    internal async Task<(bool, IReadOnlyDictionary<uint, string>?)> GetAppNamesAsync(uint[] apps)
-    {
-        if (apps.Length == 0)
-        {
-            var msg = $"{nameof(apps)} is invalid.";
-            _steamClient.Log(msg, Logger.Level.Error);
-            throw new ArgumentOutOfRangeException(msg);
-        }
-
-        await RunOrSleep();
-
-        Dictionary<string, object?> postData = new(apps.Length, StringComparer.Ordinal);
-        for (int i = 0; i < apps.Length; i++)
-            postData.Add($"appids[{i}]", apps[i]);
-
-        KeyValue response;
-        using (var steamUserAuthInterface = _steamClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_COMMUNITY_SERVICE_INTERFACE))
-        {
-            response = await steamUserAuthInterface.CallAsync(HttpMethod.Get, STEAM_GET_APPS_METHOD, args: postData);
-            if (response == null || response.Children.Count == 0)
-            {
-                _steamClient.Log("Unable to get information about Steam Apps.", Logger.Level.Error);
-                return (false, null);
-            }
-        }
-
-        Dictionary<uint, string> appNames = new();
-        var responseApps = response.Children[0].Children;
-        foreach (var responseApp in responseApps)
-        {
-            var appId = responseApp["appid"].AsUnsignedInteger();
-            var appName = responseApp["name"].AsString() ?? string.Empty;
-
-            appNames.Add(appId, appName);
-        }
-
-        return (true, appNames);
-    }
-
     private async Task<(bool, string)> RegisterWebApiKeyAsync()
     {
         string result = string.Empty;
@@ -260,7 +221,16 @@ internal class SteamWebClient: IDisposable
         KeyValue response;
         using (var steamUserAuthInterface = _steamClient.SteamConfiguration.GetAsyncWebAPIInterface(STEAM_USER_AUTH_INTERFACE))
         {
-            response = await steamUserAuthInterface.CallAsync(HttpMethod.Post, STEAM_AUTH_USER_METHOD, args: postData);
+            try
+            {
+                response = await steamUserAuthInterface.CallAsync(HttpMethod.Post, STEAM_AUTH_USER_METHOD, args: postData);
+            }
+            catch (HttpRequestException e) 
+            {
+                _steamClient.Log($"Unable to authenticate user to web with status code {e.StatusCode}.", Logger.Level.Error);
+                return (false);
+            }
+            
             if (response == null)
             {
                 _steamClient.Log("Unable to authenticate user to web.", Logger.Level.Error);

@@ -18,14 +18,16 @@ public class Program
         }
         var jsonAccounts = new WriteJSONAgent(Configuration.WriteJSONFilePath);
 
+        Client.LoadPackagesCache(jsonAccounts.PackageInfos);
+
         while (csvAccounts.Count > 0)
         {
             AccountLoginInfo account = csvAccounts.First();
 
             Client steamDataClient = new(account.Username, account.Password, account.SharedSecret);
-            ResponseData data = await steamDataClient.GetResponseDataAsync();
+            AccountInfo data = await steamDataClient.GetResponseDataAsync();
 
-            jsonAccounts.Add(data);
+            jsonAccounts.AddAccount(data);
             csvAccounts.Remove(account);
         }
     }

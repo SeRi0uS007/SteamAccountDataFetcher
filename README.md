@@ -43,5 +43,4 @@ login3;password3;sharedSecret3
 Someday in the future. After I have used it, I write down a list of things to do.
 
 - Add proxy support to speed up data collection;
-- Finalize the configuration code;
-- Сross-platform releases.
+- Finalize the configuration code.

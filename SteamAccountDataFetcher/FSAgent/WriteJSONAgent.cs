@@ -4,15 +4,24 @@ using SteamAccountDataFetcher.SteamDataClient;
 
 namespace SteamAccountDataFetcher.FSAgent;
 
-internal class WriteJSONAgent : IList<ResponseData>
+internal class WriteJSONAgent
 {
+    public class OutMapper
+    {
+        public List<PackageInfo> PackagesInfo { get; set; } = new();
+        public List<AccountInfo> AccountsInfo { get; set; } = new();
+    }
+
     private string FilePath { get; init; }
 
-    private List<ResponseData> _accountDataList;
+    private OutMapper _outMapper;
     private static readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         WriteIndented = true
     };
+
+    internal List<PackageInfo> PackageInfos { get => _outMapper.PackagesInfo; }
+    internal List<AccountInfo> AccountsInfo { get => _outMapper.AccountsInfo; }
 
     internal WriteJSONAgent(string path)
     {
@@ -27,7 +36,7 @@ internal class WriteJSONAgent : IList<ResponseData>
 
         if (!Path.Exists(path))
         {
-            _accountDataList = new();
+            _outMapper = new();
             return;
         }
 
@@ -35,80 +44,26 @@ internal class WriteJSONAgent : IList<ResponseData>
         {
             using (FileStream file = new FileStream(path, FileMode.Open, FileAccess.Read))
             {
-                var cachedType = JsonSerializer.Deserialize<List<ResponseData>?>(file);
-                if (cachedType == null)
-                {
-                    _accountDataList = new();
-                    return;
-                }
-                _accountDataList = cachedType;
+                _outMapper = JsonSerializer.Deserialize<OutMapper?>(file) ?? new();
                 return;
             }
         } catch (JsonException)
         {
-            _accountDataList = new();
+            _outMapper = new();
             return;
         }
         
     }
 
-    private void WriteCache()
+    public void WriteCache()
     {
         using (FileStream file = new FileStream(FilePath, FileMode.Create, FileAccess.Write))
-            JsonSerializer.Serialize(file, _accountDataList, _jsonSerializerOptions);
+            JsonSerializer.Serialize(file, _outMapper, _jsonSerializerOptions);
     }
 
-    public ResponseData this[int index]
-    { 
-        get => _accountDataList[index];
-        set => _accountDataList[index] = value; 
-    }
-
-    public int Count => _accountDataList.Count;
-
-    public bool IsReadOnly => 
-        ((IList<ResponseData>)_accountDataList).IsReadOnly;
-
-    public int IndexOf(ResponseData item) => _accountDataList.IndexOf(item);
-
-    public void Insert(int index, ResponseData item)
+    public void AddAccount(AccountInfo item)
     {
-        _accountDataList.Insert(index, item);
+        _outMapper.AccountsInfo.Add(item);
         WriteCache();
     }
-
-    public void RemoveAt(int index)
-    {
-        _accountDataList.RemoveAt(index);
-        WriteCache();
-    }
-
-    public void Add(ResponseData item)
-    {
-        _accountDataList.Add(item);
-        WriteCache();
-    }
-
-    public void Clear()
-    {
-        _accountDataList.Clear();
-        WriteCache();
-    }
-
-    public bool Contains(ResponseData item) => _accountDataList.Contains(item);
-
-    public void CopyTo(ResponseData[] array, int arrayIndex) => _accountDataList.CopyTo(array, arrayIndex);
-
-    public bool Remove(ResponseData item)
-    {
-        var success = _accountDataList.Remove(item);
-        if (success)
-            WriteCache();
-
-        return success;
-    }
-
-    public IEnumerator<ResponseData> GetEnumerator() => _accountDataList.GetEnumerator();
-
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
