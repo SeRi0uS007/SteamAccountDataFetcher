@@ -26,6 +26,8 @@ If someone finds it useful – you're welcome.
 1. Prepare a CSV file with login, password, and TOTP key for generating two-factor authentication;
 2. This file needs to be renamed to **SteamAccountsLogin.txt**;
 3. Put this file together with the executable file;
+    - Run **SteamAccountDataFetcher.exe** if your operating system is Windows;
+    - Run **dotnet SteamAccountDataFetcher.dll** in your terminal if your operating system is Linux or MacOS;
 4. Run and wait;
 5. The result will be a file named **SteamAccounts.json**, which will be automatically placed next to it.
 
