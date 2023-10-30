@@ -10,6 +10,7 @@ public class AccountInfo
     public string Username { get; set; } = string.Empty;
     public ulong SteamId { get; set; } = 0;
     public List<PackageInfo> Packages { get; set; } = new();
+    public bool IsLocked { get; set; }
     public bool IsLimited { get; set; }
     public bool IsBanned { get; set; }
     public string ApiKey { get; set; } = string.Empty;

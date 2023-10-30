@@ -1,11 +1,12 @@
 ﻿using SteamKit2;
+using SteamKit2.Authentication;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
 namespace SteamAccountDataFetcher.SteamDataClient;
 
-internal class SteamTwoFactorGenerator
+public class AutoTwoFactorAuthenticator: IAuthenticator
 {
     private const string STEAM_TWO_FACTOR_SERVICE_INTERFACE = "ITwoFactorService";
     private const string STEAM_QUERY_TIME_METHOD = "QueryTime";
@@ -16,20 +17,19 @@ internal class SteamTwoFactorGenerator
     private static bool _aligned = false;
 
     private Client _steamClient;
+    private string _sharedSecret;
 
-    internal SteamTwoFactorGenerator(Client steamClient)
+    public AutoTwoFactorAuthenticator(Client steamClient, string sharedSecret)
     {
         _steamClient = steamClient;
+        _sharedSecret = sharedSecret;
     }
 
-    internal async Task<string> GenerateSteamGuardCodeAsync(string sharedSecret)
+    public async Task<string> GenerateSteamGuardCodeAsync()
     {
-        if (string.IsNullOrWhiteSpace(sharedSecret))
-            return string.Empty;
-
         long time = await GetSteamTimeAsync();
 
-        string sharedSecretUnescaped = Regex.Unescape(sharedSecret);
+        string sharedSecretUnescaped = Regex.Unescape(_sharedSecret);
         byte[] sharedSecretArray = Convert.FromBase64String(sharedSecretUnescaped);
         byte[] timeArray = new byte[8];
 
@@ -88,4 +88,10 @@ internal class SteamTwoFactorGenerator
         _aligned = true;
         return;
     }
+
+    public Task<string> GetDeviceCodeAsync(bool previousCodeWasIncorrect) => GenerateSteamGuardCodeAsync();
+
+    public Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect) => throw new NotImplementedException();
+
+    public Task<bool> AcceptDeviceConfirmationAsync() => throw new NotImplementedException();
 }

@@ -1,12 +1,13 @@
 ﻿using System.Runtime.CompilerServices;
 using SteamKit2;
+using SteamKit2.Authentication;
 
 namespace SteamAccountDataFetcher.SteamDataClient;
 
-internal class Client : IDisposable
+public class Client : IDisposable
 {
     private SteamClient _steamClient;
-    private SteamTwoFactorGenerator _steamTwoFactorGenerator;
+    private AutoTwoFactorAuthenticator _autoTwoFactorAuthenticator;
     private SteamWebClient _steamWebClient;
     private CallbackManager _callbackManager;
     private SteamUser _steamUser;
@@ -26,7 +27,8 @@ internal class Client : IDisposable
     }
     internal string Username { get; private set; }
     internal string Password { get; private set; }
-    private string SharedSecret { get; set; }
+    internal string AccessToken { get; private set; } = string.Empty;
+    internal string RefreshToken { get; private set; } = string.Empty;
 
     private static uint _instance = 0;
     private static DateTime _lastConnectionTime = DateTime.MinValue;
@@ -43,7 +45,6 @@ internal class Client : IDisposable
 
         Username = username;
         Password = password;
-        SharedSecret = sharedSecret;
 
         _responseAccountInfo = new()
         {
@@ -74,13 +75,13 @@ internal class Client : IDisposable
 
         _callbackManager.Subscribe<SteamClient.ConnectedCallback>(OnConnectedAsync);
         _callbackManager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnectedAsync);
-        _callbackManager.Subscribe<SteamUser.LoggedOnCallback>(OnLoggedOnAsync);
+        _callbackManager.Subscribe<SteamUser.LoggedOnCallback>(OnLoggedOn);
         _callbackManager.Subscribe<SteamUser.LoggedOffCallback>(OnLoggedOffAsync);
         _callbackManager.Subscribe<SteamApps.LicenseListCallback>(OnLicenseListAsync);
 
         _callbackManager.Subscribe<DataFetcher.IsLimitedAccountCallback>(OnIsLimitedAccount);
 
-        _steamTwoFactorGenerator = new(this);
+        _autoTwoFactorAuthenticator = new(this, sharedSecret);
         _steamWebClient = new(this);
     }
 
@@ -117,12 +118,32 @@ internal class Client : IDisposable
 
     private async Task LoginAsync()
     {
-        string twoFactorCode = await _steamTwoFactorGenerator.GenerateSteamGuardCodeAsync(SharedSecret);
-        _steamUser.LogOn(new()
+        CredentialsAuthSession authSession = await _steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(new()
         {
             Username = Username,
             Password = Password,
-            TwoFactorCode = twoFactorCode
+            Authenticator = _autoTwoFactorAuthenticator
+        });
+
+        AuthPollResult authPollResult;
+        try
+        {
+            authPollResult = await authSession.PollingWaitForResultAsync();
+        }
+        catch (AuthenticationException e)
+        {
+            Log($"Unable to authenticate user to Steam Client with error {e.Message}.", Logger.Level.Error);
+            _steamClient.Disconnect();
+            return;
+        }
+
+        AccessToken = authPollResult.AccessToken;
+        RefreshToken = authPollResult.RefreshToken;
+
+        _steamUser.LogOn(new()
+        {
+            Username = Username,
+            AccessToken = RefreshToken
         });
     }
 
@@ -170,18 +191,11 @@ internal class Client : IDisposable
         _steamClient.Connect();
     }
 
-    private async void OnLoggedOnAsync(SteamUser.LoggedOnCallback callback)
+    private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
     {
         if (callback.Result != EResult.OK)
         {
             Log($"Unable to logon with reason {callback.Result}.", Logger.Level.Error);
-            _steamClient.Disconnect();
-            return;
-        }
-
-        if (string.IsNullOrEmpty(callback.WebAPIUserNonce)) 
-        {
-            Log($"{nameof(callback.WebAPIUserNonce)} is empty.", Logger.Level.Error);
             _steamClient.Disconnect();
             return;
         }
@@ -193,29 +207,17 @@ internal class Client : IDisposable
             return;
         }
         _responseAccountInfo.SteamId = callback.ClientSteamID.ConvertToUInt64();
-
-        Log("Logged into Steam. Log-in into Web Api.");
-        var webLoginResult = await _steamWebClient.InitAsync(callback.WebAPIUserNonce);
-        if (!webLoginResult)
-        {
-            Log("Unable to log-in into Web Api.", Logger.Level.Error);
-            _steamClient.Disconnect();
-            return;
-        }
-        Log("Logged into Web Api.");
+        _steamWebClient.InitAsync();
     }
 
     private async void OnIsLimitedAccount(DataFetcher.IsLimitedAccountCallback callback)
     {
-        if (callback.Locked)
-        {
-            Log("Account is locked.", Logger.Level.Error);
-            _steamClient.Disconnect();
-            return;
-        }
-
+        _responseAccountInfo.IsLocked = callback.Locked;
         _responseAccountInfo.IsBanned = callback.CommunityBanned;
         _responseAccountInfo.IsLimited = callback.Limited;
+
+        if (callback.Locked)
+            Log("Account is locked.", Logger.Level.Warning);
 
         if (callback.CommunityBanned)
             Log("Account is banned.", Logger.Level.Warning);
