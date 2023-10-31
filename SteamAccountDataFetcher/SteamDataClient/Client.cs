@@ -78,7 +78,6 @@ public class Client : IDisposable
         _callbackManager.Subscribe<SteamUser.LoggedOnCallback>(OnLoggedOn);
         _callbackManager.Subscribe<SteamUser.LoggedOffCallback>(OnLoggedOffAsync);
         _callbackManager.Subscribe<SteamApps.LicenseListCallback>(OnLicenseListAsync);
-
         _callbackManager.Subscribe<DataFetcher.IsLimitedAccountCallback>(OnIsLimitedAccount);
 
         _autoTwoFactorAuthenticator = new(this, sharedSecret);
@@ -118,27 +117,34 @@ public class Client : IDisposable
 
     private async Task LoginAsync()
     {
-        CredentialsAuthSession authSession = await _steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(new()
+        while (true)
         {
-            Username = Username,
-            Password = Password,
-            Authenticator = _autoTwoFactorAuthenticator
-        });
-
-        AuthPollResult authPollResult;
-        try
-        {
-            authPollResult = await authSession.PollingWaitForResultAsync();
+            try
+            {
+                CredentialsAuthSession authSession = await _steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(new()
+                {
+                    Username = Username,
+                    Password = Password,
+                    Authenticator = _autoTwoFactorAuthenticator
+                });
+                AuthPollResult authPollResult = await authSession.PollingWaitForResultAsync();
+                AccessToken = authPollResult.AccessToken;
+                RefreshToken = authPollResult.RefreshToken;
+                break;
+            }
+            catch (AuthenticationException e)
+            {
+                Log($"Unable to authenticate user to Steam Client with error {e.Message}.", Logger.Level.Error);
+                _steamClient.Disconnect();
+                return;
+            }
+            catch (TaskCanceledException)
+            {
+                Log("Failure to authenticate user to Steam Client. Retrying...", Logger.Level.Warning);
+                await Task.Delay(1000);
+                continue;
+            }
         }
-        catch (AuthenticationException e)
-        {
-            Log($"Unable to authenticate user to Steam Client with error {e.Message}.", Logger.Level.Error);
-            _steamClient.Disconnect();
-            return;
-        }
-
-        AccessToken = authPollResult.AccessToken;
-        RefreshToken = authPollResult.RefreshToken;
 
         _steamUser.LogOn(new()
         {
@@ -207,6 +213,7 @@ public class Client : IDisposable
             return;
         }
         _responseAccountInfo.SteamId = callback.ClientSteamID.ConvertToUInt64();
+        Log("Logged into Steam.");
         _steamWebClient.InitAsync();
     }
 
