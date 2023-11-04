@@ -14,6 +14,7 @@ public class Client : IDisposable
     private SteamApps _steamApps;
 
     private bool _isRunning = false;
+    private bool _isAuthUnsuccess = false;
     private bool _isLicensesProcessed = false;
     private bool _isWebAPIProcessed = false;
 
@@ -31,6 +32,7 @@ public class Client : IDisposable
     internal string RefreshToken { get; private set; } = string.Empty;
 
     private static uint _instance = 0;
+    private static bool _rateLimitReached = false;
     private static DateTime _lastConnectionTime = DateTime.MinValue;
     private static List<PackageInfo>? _packagesInfo = null;
     
@@ -94,13 +96,7 @@ public class Client : IDisposable
 
     internal async Task RunAsync()
     {
-        var secondsBetweenLastConnect = DateTime.Now - _lastConnectionTime;
-        if (secondsBetweenLastConnect < Configuration.DefaultLoginTimeout)
-        {
-            var timeToWait = Configuration.DefaultLoginTimeout - secondsBetweenLastConnect;
-            Log($"Last connection was {secondsBetweenLastConnect.Seconds} seconds ago, wait {timeToWait.Seconds} seconds.");
-            await Task.Delay(timeToWait);
-        }
+        await WaitOrProceed();
 
         _isRunning = true;
         _steamClient.Connect();
@@ -117,33 +113,38 @@ public class Client : IDisposable
 
     private async Task LoginAsync()
     {
-        while (true)
+        try
         {
-            try
+            CredentialsAuthSession authSession = await _steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(new()
             {
-                CredentialsAuthSession authSession = await _steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(new()
-                {
-                    Username = Username,
-                    Password = Password,
-                    Authenticator = _autoTwoFactorAuthenticator
-                });
-                AuthPollResult authPollResult = await authSession.PollingWaitForResultAsync();
-                AccessToken = authPollResult.AccessToken;
-                RefreshToken = authPollResult.RefreshToken;
-                break;
-            }
-            catch (AuthenticationException e)
+                Username = Username,
+                Password = Password,
+                Authenticator = _autoTwoFactorAuthenticator
+            });
+            AuthPollResult authPollResult = await authSession.PollingWaitForResultAsync();
+            AccessToken = authPollResult.AccessToken;
+            RefreshToken = authPollResult.RefreshToken;
+        }
+        catch (AuthenticationException e)
+        {
+            if (e.Result == EResult.AccountLoginDeniedThrottle || e.Result == EResult.RateLimitExceeded)
             {
-                Log($"Unable to authenticate user to Steam Client with error {e.Message}.", Logger.Level.Error);
+                Log("RateLimit reached.", Logger.Level.Warning);
+                _rateLimitReached = true;
                 _steamClient.Disconnect();
                 return;
             }
-            catch (TaskCanceledException)
-            {
-                Log("Failure to authenticate user to Steam Client. Retrying...", Logger.Level.Warning);
-                await Task.Delay(1000);
-                continue;
-            }
+
+            Log($"Unable to authenticate user to Steam Client with error {e.Message}.", Logger.Level.Error);
+            _steamClient.Disconnect();
+            return;
+        }
+        catch (TaskCanceledException)
+        {
+            Log("Failure to authenticate user to Steam Client. Retrying...", Logger.Level.Warning);
+            _isAuthUnsuccess = true;
+            _steamClient.Disconnect();
+            return;
         }
 
         _steamUser.LogOn(new()
@@ -178,7 +179,7 @@ public class Client : IDisposable
 
     private async void OnDisconnectedAsync(SteamClient.DisconnectedCallback callback)
     {
-        if (callback.UserInitiated)
+        if (callback.UserInitiated && !_rateLimitReached && !_isAuthUnsuccess)
         {
             Log("Disconnected from Steam Network by user.");
 
@@ -186,14 +187,10 @@ public class Client : IDisposable
             return;
         }
 
+        _isAuthUnsuccess = false;
         Log("Disconnected from Steam Network.", Logger.Level.Error);
-        var secondsBetweenLastConnect = DateTime.Now - _lastConnectionTime;
-        if (secondsBetweenLastConnect < Configuration.DefaultLoginTimeout)
-        {
-            var timeToWait = Configuration.DefaultLoginTimeout - secondsBetweenLastConnect;
-            Log($"Last connection was {secondsBetweenLastConnect.Seconds} seconds ago, wait {timeToWait.Seconds} seconds.");
-            await Task.Delay(timeToWait);
-        }
+        await WaitOrProceed();
+
         _steamClient.Connect();
     }
 
@@ -347,6 +344,27 @@ public class Client : IDisposable
         }
 
         _isLicensesProcessed = true;
+    }
+
+    private async Task WaitOrProceed()
+    {
+        if (_lastConnectionTime == DateTime.MinValue)
+            return;
+
+        TimeSpan deltaBetweenLastConnect = DateTime.Now - _lastConnectionTime;
+        TimeSpan timeToWait = Configuration.DefaultLoginTimeout - deltaBetweenLastConnect;
+
+        if (_rateLimitReached)
+        {
+            _rateLimitReached = false;
+            timeToWait += Configuration.DefaultRateLimitTimeout;
+        }
+
+        if (timeToWait.TotalSeconds > 1)
+        {
+            Log($"Waiting {timeToWait.TotalSeconds:N2} seconds.");
+            await Task.Delay(timeToWait);
+        }
     }
 
     public void Dispose() => _steamWebClient?.Dispose();

@@ -18,7 +18,7 @@ internal class SteamWebClient: IDisposable
     private SemaphoreSlim _webAPISemaphore = new(1);
     internal string SessionID { get; private set; } = string.Empty;
 
-    private static DateTime _lastRequestTime = DateTime.MinValue;
+    private static bool _isFirstRequestBefore = false;
 
     internal SteamWebClient(Client steamClient)
     {
@@ -223,10 +223,12 @@ internal class SteamWebClient: IDisposable
 
     private async Task RunOrSleep()
     {
-        while (DateTime.Now - _lastRequestTime < Configuration.DefaultWebRequestTimeout)
+        if (_isFirstRequestBefore)
+        {
             await Task.Delay(Configuration.DefaultWebRequestTimeout);
-
-        _lastRequestTime = DateTime.Now;
+            return;
+        }
+        _isFirstRequestBefore = true;
     }
 
     public void Dispose()
