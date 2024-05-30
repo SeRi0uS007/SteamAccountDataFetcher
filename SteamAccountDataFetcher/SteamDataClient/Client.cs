@@ -4,11 +4,10 @@ using SteamKit2.Authentication;
 
 namespace SteamAccountDataFetcher.SteamDataClient;
 
-public class Client : IDisposable
+public class Client
 {
     SteamClient _steamClient;
     AutoTwoFactorAuthenticator _autoTwoFactorAuthenticator;
-    SteamWebClient _steamWebClient;
     CallbackManager _callbackManager;
     SteamUser _steamUser;
     SteamApps _steamApps;
@@ -83,7 +82,6 @@ public class Client : IDisposable
         _callbackManager.Subscribe<DataFetcher.IsLimitedAccountCallback>(OnIsLimitedAccount);
 
         _autoTwoFactorAuthenticator = new(this, sharedSecret);
-        _steamWebClient = new(this);
     }
 
     internal static void LoadPackagesCache(List<PackageInfo> packagesInfo) => _packagesInfo = packagesInfo;
@@ -211,7 +209,6 @@ public class Client : IDisposable
         }
         _responseAccountInfo.SteamId = callback.ClientSteamID.ConvertToUInt64();
         Log("Logged into Steam.");
-        _steamWebClient.InitAsync();
     }
 
     void OnIsLimitedAccount(DataFetcher.IsLimitedAccountCallback callback)
@@ -347,8 +344,6 @@ public class Client : IDisposable
             await Task.Delay(timeToWait);
         }
     }
-
-    public void Dispose() => _steamWebClient?.Dispose();
 
     internal void Log(string message, Logger.Level level = Logger.Level.Info, [CallerMemberName] string callerName = "") =>
         Logger.Log($"{_instance},{Username.ToLower()} - {message}", level, callerName);
