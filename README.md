@@ -4,7 +4,6 @@ Utility for collecting Steam account information.
 The utility collects information about:
 
 - SteamID;
-- WebAPI (in case of missing - it will generate);
 - The presence of a Community ban on the account;
 - Availability of rights for full use of the account (Limited or Unlimited);
 - All purchased licenses on the account.
