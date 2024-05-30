@@ -6,11 +6,11 @@ internal record AccountLoginInfo(string Username, string Password, string Shared
 
 internal class ReadCSVAgent : IList<AccountLoginInfo>, IDisposable
 {
-    private const string HEADER = "AccountLogin;AccountPassword;SharedSecret";
+    const string HEADER = "AccountLogin;AccountPassword;SharedSecret";
 
-    private string FilePath { get; init; }
+    string FilePath { get; init; }
 
-    private List<AccountLoginInfo> _accountLoginList;
+    List<AccountLoginInfo> _accountLoginList;
 
     internal ReadCSVAgent(string path)
     {

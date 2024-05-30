@@ -6,17 +6,17 @@ namespace SteamAccountDataFetcher.SteamDataClient;
 
 public class Client : IDisposable
 {
-    private SteamClient _steamClient;
-    private AutoTwoFactorAuthenticator _autoTwoFactorAuthenticator;
-    private SteamWebClient _steamWebClient;
-    private CallbackManager _callbackManager;
-    private SteamUser _steamUser;
-    private SteamApps _steamApps;
+    SteamClient _steamClient;
+    AutoTwoFactorAuthenticator _autoTwoFactorAuthenticator;
+    SteamWebClient _steamWebClient;
+    CallbackManager _callbackManager;
+    SteamUser _steamUser;
+    SteamApps _steamApps;
 
-    private bool _isRunning = false;
-    private bool _isAuthUnsuccess = false;
-    private bool _isLicensesProcessed = false;
-    private bool _isWebAPIProcessed = false;
+    bool _isRunning = false;
+    bool _isAuthUnsuccess = false;
+    bool _isLicensesProcessed = false;
+    bool _isLimitDetailsProcessed = false;
 
     internal SteamConfiguration SteamConfiguration 
     {
@@ -31,12 +31,12 @@ public class Client : IDisposable
     internal string AccessToken { get; private set; } = string.Empty;
     internal string RefreshToken { get; private set; } = string.Empty;
 
-    private static uint _instance = 0;
-    private static bool _rateLimitReached = false;
-    private static DateTime _lastConnectionTime = DateTime.MinValue;
-    private static List<PackageInfo>? _packagesInfo = null;
+    static uint _instance = 0;
+    static bool _rateLimitReached = false;
+    static DateTime _lastConnectionTime = DateTime.MinValue;
+    static List<PackageInfo>? _packagesInfo = null;
     
-    private AccountInfo _responseAccountInfo;
+    AccountInfo _responseAccountInfo;
 
     internal Client(string username, string password, string sharedSecret)
     {
@@ -105,13 +105,13 @@ public class Client : IDisposable
         {
             _callbackManager.RunCallbacks();
 
-            if (_isLicensesProcessed && _isWebAPIProcessed)
+            if (_isLicensesProcessed && _isLimitDetailsProcessed)
                 _steamClient.Disconnect();
             await Task.Delay(TimeSpan.FromSeconds(1));
         }
     }
 
-    private async Task LoginAsync()
+    async Task LoginAsync()
     {
         try
         {
@@ -154,7 +154,7 @@ public class Client : IDisposable
         });
     }
 
-    private async void OnConnectedAsync(SteamClient.ConnectedCallback callback)
+    async void OnConnectedAsync(SteamClient.ConnectedCallback callback)
     {
         _lastConnectionTime = DateTime.Now;
 
@@ -177,7 +177,7 @@ public class Client : IDisposable
         await LoginAsync();
     }
 
-    private async void OnDisconnectedAsync(SteamClient.DisconnectedCallback callback)
+    async void OnDisconnectedAsync(SteamClient.DisconnectedCallback callback)
     {
         if (callback.UserInitiated && !_rateLimitReached && !_isAuthUnsuccess)
         {
@@ -194,7 +194,7 @@ public class Client : IDisposable
         _steamClient.Connect();
     }
 
-    private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
+    void OnLoggedOn(SteamUser.LoggedOnCallback callback)
     {
         if (callback.Result != EResult.OK)
         {
@@ -214,7 +214,7 @@ public class Client : IDisposable
         _steamWebClient.InitAsync();
     }
 
-    private async void OnIsLimitedAccount(DataFetcher.IsLimitedAccountCallback callback)
+    void OnIsLimitedAccount(DataFetcher.IsLimitedAccountCallback callback)
     {
         _responseAccountInfo.IsLocked = callback.Locked;
         _responseAccountInfo.IsBanned = callback.CommunityBanned;
@@ -227,31 +227,12 @@ public class Client : IDisposable
             Log("Account is banned.", Logger.Level.Warning);
 
         if (callback.Limited)
-        {
             Log("Account is limited.", Logger.Level.Warning);
-            
-            // Limited accounts is unable to retrieve Web API
-            _isWebAPIProcessed = true;
-            return;
-        }
 
-        Log("Retrieving Web API Key.");
-        await Task.Delay(Configuration.DefaultWebRequestTimeout);
-
-        (bool success, string webApiKey) = await _steamWebClient.GetWebApiKeyAsync();
-        if (!success)
-        {
-            Log("Unable to retrieve Web Api Key.", Logger.Level.Error);
-            _steamClient.Disconnect();
-            return;
-        }
-        Log("Retrieved Web API Key.");
-
-        _responseAccountInfo.ApiKey = webApiKey;
-        _isWebAPIProcessed = true;
+        _isLimitDetailsProcessed = true;
     }
 
-    private async void OnLoggedOffAsync(SteamUser.LoggedOffCallback callback)
+    async void OnLoggedOffAsync(SteamUser.LoggedOffCallback callback)
     {
         if (callback.Result == EResult.OK)
         {
@@ -272,7 +253,7 @@ public class Client : IDisposable
         return;
     }
 
-    private async void OnLicenseListAsync(SteamApps.LicenseListCallback callback)
+    async void OnLicenseListAsync(SteamApps.LicenseListCallback callback)
     {
         var licenseCount = callback.LicenseList.Count - 1;
         if (licenseCount > 0)
@@ -346,7 +327,7 @@ public class Client : IDisposable
         _isLicensesProcessed = true;
     }
 
-    private async Task WaitOrProceed()
+    async Task WaitOrProceed()
     {
         if (_lastConnectionTime == DateTime.MinValue)
             return;

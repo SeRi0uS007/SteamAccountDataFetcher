@@ -13,5 +13,4 @@ public class AccountInfo
     public bool IsLocked { get; set; }
     public bool IsLimited { get; set; }
     public bool IsBanned { get; set; }
-    public string ApiKey { get; set; } = string.Empty;
 }

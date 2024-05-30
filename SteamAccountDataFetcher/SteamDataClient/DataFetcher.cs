@@ -3,7 +3,7 @@ using SteamKit2.Internal;
 
 namespace SteamAccountDataFetcher.SteamDataClient;
 
-internal class DataFetcher : ClientMsgHandler
+class DataFetcher : ClientMsgHandler
 {
     public class IsLimitedAccountCallback : CallbackMsg
     {
@@ -21,7 +21,7 @@ internal class DataFetcher : ClientMsgHandler
         }
     }
 
-    private void HandleClientIsLimitedAccount(IPacketMsg packetMsg)
+    void HandleClientIsLimitedAccount(IPacketMsg packetMsg)
     {
         var isLimitedAccountMsg = new ClientMsgProtobuf<CMsgClientIsLimitedAccount>(packetMsg);
 

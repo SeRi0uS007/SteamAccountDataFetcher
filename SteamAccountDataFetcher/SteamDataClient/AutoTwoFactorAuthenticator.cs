@@ -8,16 +8,16 @@ namespace SteamAccountDataFetcher.SteamDataClient;
 
 public class AutoTwoFactorAuthenticator: IAuthenticator
 {
-    private const string STEAM_TWO_FACTOR_SERVICE_INTERFACE = "ITwoFactorService";
-    private const string STEAM_QUERY_TIME_METHOD = "QueryTime";
+    const string STEAM_TWO_FACTOR_SERVICE_INTERFACE = "ITwoFactorService";
+    const string STEAM_QUERY_TIME_METHOD = "QueryTime";
 
-    private static byte[] STEAM_GUARD_CODE_TRANSLATIONS = new byte[] { 50, 51, 52, 53, 54, 55, 56, 57, 66, 67, 68, 70, 71, 72, 74, 75, 77, 78, 80, 81, 82, 84, 86, 87, 88, 89 };
+    static byte[] STEAM_GUARD_CODE_TRANSLATIONS = new byte[] { 50, 51, 52, 53, 54, 55, 56, 57, 66, 67, 68, 70, 71, 72, 74, 75, 77, 78, 80, 81, 82, 84, 86, 87, 88, 89 };
 
-    private static int _timeDiffirence = 0;
-    private static bool _aligned = false;
+    static int _timeDiffirence = 0;
+    static bool _aligned = false;
 
-    private Client _steamClient;
-    private string _sharedSecret;
+    Client _steamClient;
+    string _sharedSecret;
 
     public AutoTwoFactorAuthenticator(Client steamClient, string sharedSecret)
     {
@@ -56,14 +56,14 @@ public class AutoTwoFactorAuthenticator: IAuthenticator
 
         return Encoding.UTF8.GetString(codeArray);
     }
-    private async Task<long> GetSteamTimeAsync()
+    async Task<long> GetSteamTimeAsync()
     {
         if (!_aligned)
             await AlignTimeAsync();
 
         return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + _timeDiffirence;
     }
-    private async Task AlignTimeAsync()
+    async Task AlignTimeAsync()
     {
         long currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         KeyValue response;
